@@ -1,0 +1,11 @@
+[project]
+name = "vbthesiscode2-fastapi"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115.12",
+    "ifcopenshell>=0.8.2",
+    "uvicorn[standard]>=0.34.2",
+]

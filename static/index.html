@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BK Viewer</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <link href="style.css" rel="stylesheet">
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+    
+    <div style="position: absolute; top: 10px; left: 10px; z-index: 10; background: white; padding: 10px;">
+        <label for="roomSelect">Select a Room:</label>
+        <select id="roomSelect">
+            <option value="" disabled selected>Select a room</option>
+        </select>
+        <p style="margin-top: 8px;">
+            You picked: <strong><span id="selectedRoom">—</span></strong>
+        </p>
+        <p style="margin-top: 8px;">
+            Global ID: <code id="globalIdDisplay">—</code>
+        </p>
+        <!-- loading spinner: hidden until we fire off the fetch -->
+        <div id="loadingSpinner" class="spinner-wrapper">
+            <span class="spinner-dot"></span>
+            <span class="spinner-text">Loading…</span>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>
