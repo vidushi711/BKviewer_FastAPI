@@ -33,18 +33,19 @@ About the XGBoost model
 	•	Instead of native .json or .model formats, the pipeline is saved as a joblib file
 	•	This preserves all preprocessing steps (via an sklearn.Pipeline) alongside the trained regressor.
 
-
-PROJECT STRUCTURE
-├── static/               ← served at “/”: contains index.html, main.js, style.css, bk_rooms.csv, IFC/
-│   ├── index.html        ← Cesium container + dropdown UI
-│   ├── main.js           ← loads Cesium, dropdown, spinner, calls /api/simulate/
-│   ├── style.css         ← spinner + layout styles
-│   └── IFC/              ← BK IFC file should live here - download from drive - https://drive.google.com/file/d/1ZXrI8kJfnkPilKgl4p4mBvxf7cqVyY5u/view?usp=drive_link
-├── xgboost_training.py   ← script to (re-)train + save XGBoost pipeline
-├── xgboost_models/       ← holds joblib files of saved pipelines
-├── ifc_parsers.py        ← pure-IFC parsing → Site/Room/Window objects
-├── ifc_calculators.py    ← window‐solar‐inflow helper
-├── simulator.py          ← “mediator”: calls the parsers, weather, calculator, loads model, returns float (predicted internal temp)
-├── main.py               ← FastAPI app: mounts static, exposes GET /api/simulate/{room_name}
-├── pyproject.toml        ← uv-managed dependencies
-└── README.md             ← ← you are here
+project-root/
+├── static/
+│   ├── index.html
+│   ├── main.js
+│   ├── style.css
+│   ├── bk_rooms.csv
+│   └── IFC/
+│       └── BK_v2_vb_updated.ifc      ← download from Drive link
+├── xgboost_training.py               ← train/save XGB pipeline
+├── xgboost_models/                   ← saved .joblib pipelines
+├── ifc_parsers.py                    ← IFC→Site/Room/Window data
+├── ifc_calculators.py                ← solar-inflow helper
+├── simulator.py                      ← mediator: parsers→weather→model
+├── main.py                           ← FastAPI app, mounts static + /api
+├── pyproject.toml                    ← uv-managed dependencies
+└── README.md                         ← you are here
