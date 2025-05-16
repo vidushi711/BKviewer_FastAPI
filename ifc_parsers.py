@@ -86,7 +86,7 @@ def extract_site_details(ifc_path: Union[str, Path]) -> Site:
 
 # FUNCTION TO create ROOM OBJECT FROM  IFC FILE
 def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
-    '''parse_room builds and returns a Site object containing exactly one room in its .rooms dict'''
+    '''This function builds and returns a Site object containing exactly one room in its .rooms dict'''
     if isinstance(ifc_path, str):
         ifc_path = Path(ifc_path)
     model = ifcopenshell.open(ifc_path)

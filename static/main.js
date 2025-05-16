@@ -41,7 +41,8 @@ loadRooms();
 
 const selectEl    = document.getElementById('roomSelect');
 const displayEl   = document.getElementById('selectedRoom');
-const globalIdEl  = document.getElementById('globalIdDisplay');
+// grab the <span> where we'll show the predicted temperature
+const predictedEl = document.getElementById('predictedTemp');
 
 // 5. Handle user selection
 selectEl.addEventListener('change', async (evt) => {
@@ -57,16 +58,16 @@ selectEl.addEventListener('change', async (evt) => {
   spinner.style.display = 'flex';
 
   try {
-    // C) Fetch room details
-    const resp = await fetch(`/api/rooms/${encodeURIComponent(roomName)}`);
+    // C) calling FastAPI
+    const resp = await fetch(`/api/simulate/${encodeURIComponent(roomName)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const { global_id } = await resp.json();
-    // D) Show Global ID
-    globalIdEl.textContent = global_id;
-    console.log('GlobalId from server:', global_id);
+    const { predicted_temp } = await resp.json();
+    // D) Show predicted temperature
+    predictedEl.textContent = predicted_temp.toFixed(1);
+    console.log('Predicted temp from server:', predicted_temp);
   } catch (err) {
-    globalIdEl.textContent = 'Error';
-    console.error('Error fetching room info:', err);
+    console.error('Error fetching prediction:', err);
+    predictedEl.textContent = 'Error';
   } finally {
     // E) always hide the spinner at the end
     spinner.style.display = 'none';
