@@ -1,11 +1,10 @@
 from pathlib import Path
 from dataclasses import dataclass
+from typing import Optional, Union
 # external
 import ifcopenshell
 import ifcopenshell.geom
 import ifcopenshell.util.element
-# VB added
-from typing import Optional, Union
 
 # OBJECT DEFINITIONS
 @dataclass
@@ -161,3 +160,13 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
 
     # Not found
     raise ValueError(f"No space named '{room_name}' found in IFC")
+
+if __name__ == "__main__":
+    ifc_path = '../../vb_resources/BK_BIM/ifc/BK_v2_vb_updated.ifc'
+    room_name = '81'
+    site = parse_room(ifc_path, room_name)
+    room = site.rooms.get(room_name)
+    if room:
+        print(f"Room: {room.short_name}, Volume: {room.volume}, Windows: {len(room.windows or [])}")
+    else:
+        print(f"No room found with name '{room_name}'")

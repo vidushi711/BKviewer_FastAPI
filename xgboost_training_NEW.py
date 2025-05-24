@@ -16,21 +16,50 @@ from datetime import datetime
 
 # THIS FILE IS FOR TRAINING THE XGBOOST MODEL - IT IS A STANDALONE SCRIPT
 
+
 def fetch_sensor_data(url: str, limit: int = 100) -> pd.DataFrame:
     """
     Fetch sensor observations from the given URL, optionally limiting the number of records.
+    Returns an empty DataFrame with the expected columns if no data.
     """
     response = requests.get(url)
     response.raise_for_status()
     data = response.json()
     observations = data.get('value', [])[:limit]
+    # build DataFrame
     df = pd.DataFrame([
         {'timestamp': obs.get('phenomenonTime'), 'internal_temp': obs.get('result')}
         for obs in observations
     ])
+    # if no observations, return empty DataFrame with timestamp column
+    if df.empty:
+        return pd.DataFrame(columns=['timestamp', 'internal_temp'])
     df = df.drop_duplicates(subset='timestamp')
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     return df
+
+
+def fetch_all_sensor_data(base_url: str, page_size: int = 500) -> pd.DataFrame:
+    """
+    Page through the FROST Server OData API, collecting all observations in blocks of `page_size`.
+    """
+    all_dfs = []
+    skip = 0
+
+    while True:
+        # build the paged URL
+        paged_url = f"{base_url}&$top={page_size}&$skip={skip}"
+        # fetch up to page_size rows
+        df_page = fetch_sensor_data(paged_url, limit=page_size)
+        if df_page.empty:
+            break
+        all_dfs.append(df_page)
+        skip += page_size
+
+    if all_dfs:
+        return pd.concat(all_dfs, ignore_index=True)
+    else:
+        return pd.DataFrame(columns=['timestamp','internal_temp'])
 
 
 def fetch_external_temp(site: Site, timestamp: pd.Timestamp) -> Optional[float]:
@@ -120,8 +149,21 @@ if __name__ == "__main__":
     for room_code, url in rooms:
         site = parse_room(IFC_FILE, room_code)
         room = site.rooms[room_code]
-        df_raw = fetch_sensor_data(url, limit=SENSOR_LIMIT)
+        df_raw = fetch_all_sensor_data(url, page_size=SENSOR_LIMIT)
         df_prepared = prepare_training_data(df_raw, site, room)
+        # ── keep only one observation per hour ──
+        # 1. Floor each timestamp to its hour
+        df_prepared['hour'] = df_prepared['timestamp'].dt.floor('h')
+        # 2. Sort so you pick the earliest (or latest) in each hour
+        df_prepared = df_prepared.sort_values('timestamp')
+        # 3. Group by the floored hour and take the first record
+        df_prepared = (
+            df_prepared
+            .groupby('hour', group_keys=False)
+            .first()
+            .reset_index(drop=True)
+        )
+
         df_list.append(df_prepared)
 
     # Merge all rooms into a single DataFrame
