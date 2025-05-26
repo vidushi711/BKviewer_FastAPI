@@ -5,6 +5,8 @@ console.log("👋 main.js loaded");
 Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0NTY4MWEyMC01NDg2LTRjYWEtODExOS0zMjQ3NGNiNDZkMmMiLCJpZCI6MjYwMTgwLCJpYXQiOjE3MzMzNjE1MDN9.OIim-jXbq3AfbnBU2rS2SGRG4DKwO88JR_2ycGIEk8w';
 
 async function startViewer() {
+  console.log("🛰 startViewer()");
+  // 1. Terrain & viewer
   const terrain = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
   const viewer = new Cesium.Viewer('cesiumContainer', {
     terrainProvider: terrain,
@@ -12,9 +14,80 @@ async function startViewer() {
     animation: true,
     shouldAnimate: true
   });
+  // load and add the building 3D tileset
   const bkTileset = await Cesium.Cesium3DTileset.fromIonAssetId(2955578);
   viewer.scene.primitives.add(bkTileset);
-  viewer.zoomTo(bkTileset);
+  // once the tileset is ready, zoom to it _and then_ draw boxes
+  await bkTileset.readyPromise;
+  console.log("Tileset root.transform:", bkTileset.root.transform);
+  // (this includes any RTC offset that Cesium applied under the hood)
+  const modelMatrix = bkTileset.root.transform;
+  // 1a. extract the tileset’s translation (ECEF meters):
+  const m = modelMatrix.elements;
+  const tilesetOrigin = new Cesium.Cartesian3(modelMatrix[12], modelMatrix[13],  modelMatrix[14]);
+  console.log("tilesetOrigin (ECEF):", tilesetOrigin);
+  // 1b) paste your JSON-logged center here:
+  const sampleJsonCenter = new Cesium.Cartesian3(
+    3923161.262283621,   // x from your console
+    299837.8287741002,   // y
+    5003152.480305793    // z
+  );
+  // 1c) fudge = tilesetOrigin − sampleJsonCenter
+  const fudge = Cesium.Cartesian3.subtract(
+    tilesetOrigin,
+    sampleJsonCenter,
+    new Cesium.Cartesian3()
+  );
+  console.log("Computed fudge (m):", fudge);
+
+  let count = 0;
+  // ─── Addition: fetch and draw IFC space boxes ───
+  try {
+    const res = await fetch('/IFC_BB/spaces_bboxes.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const spaces = await res.json();
+    spaces.forEach(space => {
+      const [xmin, ymin, zmin, xmax, ymax, zmax] = space.bbox;
+
+      // center & dimensions in the same CRS as the tileset
+      const localCenter = new Cesium.Cartesian3(
+        (xmin + xmax) / 2,
+        (ymin + ymax) / 2,
+        (zmin + zmax) / 2
+      );
+      // Transform into world coords
+      const worldCenter = Cesium.Matrix4.multiplyByPoint(
+        modelMatrix,
+        localCenter,
+        new Cesium.Cartesian3()
+      );
+      // Dimensions of the box
+      const dims = new Cesium.Cartesian3(
+        xmax - xmin,
+        ymax - ymin,
+        zmax - zmin
+      );
+      // Add the box entity
+      const ent = viewer.entities.add({
+        id: space.id,
+        name: space.name,
+        position: worldCenter,
+        box: {
+          dimensions: dims,
+          material: Cesium.Color.YELLOW.withAlpha(0.2),
+          outline: true,
+          outlineColor: Cesium.Color.ORANGE
+        },
+      });
+      console.log("Added box for", space.name, "at", worldCenter);
+      count += 1;      
+    });
+    
+  } catch (e) {console.error('Failed to load or draw IFC bboxes:', e);}
+  console.log("Total entities now in viewer:", viewer.entities.values.length);
+  // ─────────────────────────────────────────────
+  await viewer.zoomTo(bkTileset);
+
 }
 
 // 3. Load rooms into the dropdown

@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 import simulator
 import traceback
 
+
 app = FastAPI()
 
 # so /api/rooms/{room_name} endpoint calls predict_internal_temp:
@@ -21,6 +22,13 @@ def get_room(room_name: str):
         )
     return {"predicted_temp": temp}
 # what happens to the content I return from this function - FastAPI serves up the same to any HTTP client—be it curl, Postman, or browser’s fetch—and it’s up to that client to decide how to display or consume it
+
+# Serve the bounding‐box JSON under /IFC_BB
+app.mount(
+    "/IFC_BB",
+    StaticFiles(directory="output/IFC_BB"),
+    name="ifc_bb"
+)
 
 # Mount the entire `static/` directory at the web root,
 # with html=True so "/" serves index.html by default.
