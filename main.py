@@ -10,7 +10,7 @@ app = FastAPI()
 @app.get("/api/simulate/{room_name}")
 def get_room(room_name: str):
     try:
-        temp = simulator.predict_internal_temp(room_name)
+        temp, solar, volume, windows = simulator.predict_internal_temp(room_name)
     except ValueError as e:
         traceback.print_exc()                  # ← prints full stack for 404s
         raise HTTPException(status_code=404, detail=str(e))
@@ -20,7 +20,12 @@ def get_room(room_name: str):
             status_code=500,
             detail=f"Simulator error: {e!r}"
         )
-    return {"predicted_temp": temp}
+    return {
+        "predicted_temp": temp,
+        "solar_inflow":   solar,
+        "room_volume":    volume,
+        "windows":        windows
+    }
 # what happens to the content I return from this function - FastAPI serves up the same to any HTTP client—be it curl, Postman, or browser’s fetch—and it’s up to that client to decide how to display or consume it
 
 # Serve the bounding‐box JSON under /IFC_BB

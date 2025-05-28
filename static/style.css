@@ -16,8 +16,8 @@ html, body, #cesiumContainer {
   display: inline-block;
   width: 1em;
   height: 1em;
-  border: 0.2em solid rgba(48, 112, 149, 0.1);
-  border-top-color: rgba(0,0,0,0.4);
+  border: 0.2em solid rgba(61, 56, 56, 0.1);
+  border-top-color: rgba(245, 235, 235, 0.4);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   vertical-align: middle;
@@ -30,4 +30,34 @@ html, body, #cesiumContainer {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+#infoPanel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+
+  /* sizing & spacing */
+  width: 650px;      
+  padding: 15px;     /* a little more breathing room */
+  /* light grey/white with 90% opacity */
+  background: rgba(61, 56, 56, 0.9);
+
+  /* optional nice touches */
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  font-size: 18px;   /* pick whatever base size you like */
+  color: #fbf6f6;
+}
+/* force form controls to inherit that */
+#infoPanel select,
+#infoPanel select option,
+#infoPanel label,
+#infoPanel p,
+#infoPanel .spinner-text {
+  font-family: inherit;
+  font-size: inherit;
 }

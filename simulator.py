@@ -3,10 +3,12 @@ import ifcopenshell
 from pathlib import Path
 from typing import Union, Optional
 from typing import Any
+from typing import Tuple, List, Dict
 import pandas as pd
 from datetime import datetime
 import pytz
 from meteostat import Point, Hourly
+import simulator
 
 #  for xgboost
 import joblib
@@ -35,14 +37,19 @@ def get_latest_model(path: str = "xgboost_models") -> Optional[Any]:
         raise FileNotFoundError("No XGBoost model found in 'xgboost_models/'")
     return joblib.load(models[0])
 
-def predict_internal_temp(room_name: str, ifc_path: Union[str, Path] = IFC_PATH) -> float:
+def predict_internal_temp(room_name: str, ifc_path: Union[str, Path] = IFC_PATH) -> Tuple[float, float, float, List[Dict]]:
     """
-    Mediator function: given a room_name, extracts site and room details from corrected BK IFC
+    Returns:
+      - temp: predicted internal temperature (°C)
+      - total_solar: total solar inflow (W)
+      - volume: room volume (m³)
+      - windows: list of dicts {globalid, area, shgc, tilt, azimuth}
     """
 
     # Parse SELECTED ROOM into a Site object that has locational data
     site: Site = parse_room(ifc_path, room_name)
     # parse_room invokes extract_site_details internally to add locational data
+    volume = next(iter(site.rooms.values())).volume
 
     # Attempt to find the room by its long_name key
     room: Optional[Room] = site.rooms.get(room_name)
@@ -58,13 +65,21 @@ def predict_internal_temp(room_name: str, ifc_path: Union[str, Path] = IFC_PATH)
     # Serialize windows for output along with solar_inflow for each
     now = datetime.now(pytz.timezone(site.timezone))
     timestamp = pd.Timestamp(now)
-    windows_out = []
     total_solar_inflow = 0.0
+    windows: List[Dict] = []
     if room.windows:
         for w in room.windows:
             # compute solar inflow for this window
-            inflow = window_solar_inflow(w, site, timestamp)
+            area, shgc, tilt, azimuth, inflow = window_solar_inflow(w, site, timestamp)
             total_solar_inflow += inflow
+            windows.append({
+                "global_id":    w.global_id,
+                "area":         area,
+                "shgc":         shgc,
+                "tilt":         tilt,
+                "azimuth":      azimuth,
+                "solar_inflow": inflow
+            })
     # Get external temperature
     external_temp = get_current_external_temp(site, timestamp)
     if external_temp is None:
@@ -81,4 +96,9 @@ def predict_internal_temp(room_name: str, ifc_path: Union[str, Path] = IFC_PATH)
     }])
     # Run prediction
     predicted_temp = model.predict(input_df)[0]
-    return float(predicted_temp)
+    return (
+        float(predicted_temp),    # 1. predicted temp
+        total_solar_inflow,       # 2. total solar
+        volume,                   # 3. room volume
+        windows                   # 4. list of window dicts
+    )

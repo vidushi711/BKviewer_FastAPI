@@ -1,10 +1,12 @@
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, Tuple, List, Dict
 # external
+import math
+import numpy as np
 import ifcopenshell
 import ifcopenshell.geom
-import ifcopenshell.util.element
+from ifcopenshell.util.element import get_psets
 
 # OBJECT DEFINITIONS
 @dataclass
@@ -25,6 +27,8 @@ class Window:
     SHGC: Optional[float] = None
     area: Optional[float] = None
     solar_inflow: Optional[float] = None
+    tilt: Optional[float] = None
+    azimuth: Optional[float] = None
     is_external: bool = False
 
 @dataclass
@@ -51,6 +55,88 @@ class Site:
         if key is None:
             key = room.short_name
         self.rooms[key] = room
+
+
+def compute_average_normal(verts, faces):
+    """
+    verts: flat list [x0,y0,z0, x1,y1,z1, ...]
+    faces: list of 3-int tuples (i0, i1, i2) indexing into verts//3
+    """
+    total = np.zeros(3)
+    for (i0, i1, i2) in faces:
+        v0 = np.array(verts[3*i0:3*i0+3])
+        v1 = np.array(verts[3*i1:3*i1+3])
+        v2 = np.array(verts[3*i2:3*i2+3])
+        # triangle normal (unnormalized)
+        n = np.cross(v1 - v0, v2 - v0)
+        total += n  # weighted by n (area proportional)
+    norm = np.linalg.norm(total)
+    return (total / norm) if norm > 0 else np.array([0, 0, 1])
+
+def normal_to_tilt_azimuth(n):
+    """
+    n: unit normal [nx, ny, nz]
+    returns tilt (° from horizontal), azimuth (° clockwise from north)
+    """
+    tilt = math.degrees(math.acos(n[2]))
+    raw = math.degrees(math.atan2(n[0], n[1]))
+    az = raw if raw >= 0 else raw + 360.0
+    return tilt, az
+
+def compute_window_tilt_azimuth(window_entity, window_bbox: BoundingBox) -> tuple[float, float]:
+    """
+    Builds a mesh for the window_entity, computes its average *exterior* normal,
+    and returns (tilt, azimuth) in degrees.
+    """
+    # 1) Build the mesh
+    settings = ifcopenshell.geom.settings()
+    settings.set(settings.USE_WORLD_COORDS, True)
+    shape = ifcopenshell.geom.create_shape(settings, window_entity)
+    verts = shape.geometry.verts
+    raw = shape.geometry.faces
+
+    # 2) Unpack faces, compute per-face normals & centroids
+    normals = []
+    centroids = []
+    i = 0
+    while i < len(raw):
+        count = raw[i]
+        if count == 3:
+            i0, i1, i2 = raw[i+1], raw[i+2], raw[i+3]
+            v0 = np.array(verts[3*i0:3*i0+3])
+            v1 = np.array(verts[3*i1:3*i1+3])
+            v2 = np.array(verts[3*i2:3*i2+3])
+            # unnormalized normal
+            n = np.cross(v1 - v0, v2 - v0)
+            # triangle centroid
+            centroid = (v0 + v1 + v2) / 3
+            normals.append(n)
+            centroids.append(centroid)
+            i += 4
+        else:
+            i += 1 + count
+
+    # 3) Compute window center from bounding box
+    center = np.array([
+        (window_bbox.x_min + window_bbox.x_max) / 2,
+        (window_bbox.y_min + window_bbox.y_max) / 2,
+        (window_bbox.z_min + window_bbox.z_max) / 2,
+    ])
+
+    # 4) Average only *exterior*-facing normals
+    total = np.zeros(3)
+    for n, centroid in zip(normals, centroids):
+        # if dot(n, (centroid - center)) > 0, normal points outside
+        if np.dot(n, centroid - center) > 0:
+            total += n
+
+    # 5) Normalize & compute tilt/azimuth
+    norm = np.linalg.norm(total)
+    outward = (total / norm) if norm > 0 else np.array([0, 0, 1])
+    tilt = math.degrees(math.acos(outward[2]))
+    raw_az = math.degrees(math.atan2(outward[0], outward[1]))
+    az = raw_az if raw_az >= 0 else raw_az + 360.0
+    return tilt, az
 
 # mini FUNCTION TO COMPUTE BOUNDING BOX
 def compute_bounding_box(shape_obj) -> Optional[BoundingBox]:
@@ -96,6 +182,7 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
     settings.set(settings.USE_WORLD_COORDS, True)
     target = room_name.strip().lower()
 
+# Iterate through spaces to find the one matching room_name
     for space in spaces:
         longn = (space.LongName or "").strip().lower()
         shortn = (space.Name or "").strip().lower()
@@ -103,7 +190,7 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
             gid = space.GlobalId
             short_name = space.Name or ""
             long_name = space.LongName or ""
-            props = ifcopenshell.util.element.get_psets(space)
+            props = get_psets(space)
             volume = props.get("BaseQuantities", {}).get("GrossVolume", 0)
             try:
                 shape = ifcopenshell.geom.create_shape(settings, space)
@@ -111,10 +198,12 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
             except Exception:
                 bbox = None
             
-            # Gather external windows in the room
+            # Gather external windows in the room - 
+            # with these attributes loaded/calculated - 
+            # global_id, room's short name, bounding_box, area, SHGC, tilt, azimuth, is_external
             room_windows: list[Window] = []
             for w in windows:
-                psets = ifcopenshell.util.element.get_psets(w).get("Pset_WindowCommon", {})
+                psets = get_psets(w).get("Pset_WindowCommon", {})
                 if not psets.get("IsExternal", False):
                     continue
                 try:
@@ -133,9 +222,11 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
                         wbbox.y_max <= bbox.y_max + buf and
                         wbbox.z_max <= bbox.z_max + buf
                     ):
-                        bq = ifcopenshell.util.element.get_psets(w).get("BaseQuantities", {})
+                        bq = get_psets(w).get("BaseQuantities", {})
                         area = bq.get("Area", 0)
-                        shgc = ifcopenshell.util.element.get_psets(w).get("Analytical Properties(Type)", {}).get("Solar Heat Gain Coefficient", 0)
+                        shgc = get_psets(w).get("Analytical Properties(Type)", {}).get("Solar Heat Gain Coefficient", 0)
+
+                        tilt_val, az_val = compute_window_tilt_azimuth(w, wbbox)
                         room_windows.append(
                             Window(
                                 global_id=w.GlobalId,
@@ -143,6 +234,9 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
                                 bounding_box=wbbox,
                                 area=area,
                                 SHGC=shgc,
+                                solar_inflow=None,
+                                tilt=tilt_val,
+                                azimuth=az_val,
                                 is_external=True,
                             )
                         )
@@ -162,8 +256,8 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
     raise ValueError(f"No space named '{room_name}' found in IFC")
 
 if __name__ == "__main__":
-    ifc_path = '../../vb_resources/BK_BIM/ifc/BK_v2_vb_updated.ifc'
-    room_name = '81'
+    ifc_path = 'static/IFC/BK_v2_vb_updated.ifc'
+    room_name = 'BG.West.010'
     site = parse_room(ifc_path, room_name)
     room = site.rooms.get(room_name)
     if room:

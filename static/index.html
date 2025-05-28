@@ -10,17 +10,27 @@
 <body>
     <div id="cesiumContainer"></div>
     
-    <div style="position: absolute; top: 10px; left: 10px; z-index: 10; background: white; padding: 10px;">
+     <div id="infoPanel">
         <label for="roomSelect">Select a Room:</label>
         <select id="roomSelect">
             <option value="" disabled selected>Select a room</option>
         </select>
-        <p style="margin-top: 8px;">
+        <p style="margin-top: 10px;">
             You picked: <strong><span id="selectedRoom">—</span></strong>
         </p>
-        <p style="margin-top: 8px;">
+        <p style="margin-top: 10px;">
             Predicted Temp: <strong><span id="predictedTemp">—</span>°C</strong>
         </p>
+        <p style="margin-top: 10px;">
+            Solar Inflow: <strong><span id="solarInflow">—</span> W</strong>
+        </p>
+        <p style="margin-top: 10px;">
+            Room Volume: <strong><span id="roomVolume">—</span> m³</strong>            
+        </p>
+        <div style="margin-top: 10px;">
+            <strong>Windows:</strong>
+            <ul id="windowsUl" style="padding-left: 1em; margin-top: 4px;"></ul>
+        </div>
         <!-- loading spinner: hidden until we fire off the fetch -->
         <div id="loadingSpinner" class="spinner-wrapper">
             <span class="spinner-dot"></span>

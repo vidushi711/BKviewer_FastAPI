@@ -32,13 +32,6 @@ async function startViewer() {
     299837.8287741002,   // y
     5003152.480305793    // z
   );
-  // 1c) fudge = tilesetOrigin − sampleJsonCenter
-  const fudge = Cesium.Cartesian3.subtract(
-    tilesetOrigin,
-    sampleJsonCenter,
-    new Cesium.Cartesian3()
-  );
-  console.log("Computed fudge (m):", fudge);
 
   let count = 0;
   // ─── Addition: fetch and draw IFC space boxes ───
@@ -49,17 +42,11 @@ async function startViewer() {
     spaces.forEach(space => {
       const [xmin, ymin, zmin, xmax, ymax, zmax] = space.bbox;
 
-      // center & dimensions in the same CRS as the tileset
+      // compute the local‐center and dims
       const localCenter = new Cesium.Cartesian3(
         (xmin + xmax) / 2,
         (ymin + ymax) / 2,
         (zmin + zmax) / 2
-      );
-      // Transform into world coords
-      const worldCenter = Cesium.Matrix4.multiplyByPoint(
-        modelMatrix,
-        localCenter,
-        new Cesium.Cartesian3()
       );
       // Dimensions of the box
       const dims = new Cesium.Cartesian3(
@@ -67,8 +54,19 @@ async function startViewer() {
         ymax - ymin,
         zmax - zmin
       );
-      // Add the box entity
-      const ent = viewer.entities.add({
+      // transform to world coords
+      let worldCenter = Cesium.Matrix4.multiplyByPoint(
+        modelMatrix,
+        localCenter,
+        new Cesium.Cartesian3()
+      );
+
+      // apply north‐east shift
+      const extraShift = new Cesium.Cartesian3(0.0, 0.0, 0.0); 
+      Cesium.Cartesian3.add(worldCenter, extraShift, worldCenter);
+
+      // 4) add exactly one entity
+      viewer.entities.add({
         id: space.id,
         name: space.name,
         position: worldCenter,
@@ -79,8 +77,8 @@ async function startViewer() {
           outlineColor: Cesium.Color.ORANGE
         },
       });
-      console.log("Added box for", space.name, "at", worldCenter);
-      count += 1;      
+
+      console.log("Added shifted box for", space.name, "at", worldCenter);
     });
     
   } catch (e) {console.error('Failed to load or draw IFC bboxes:', e);}
@@ -134,41 +132,15 @@ selectEl.addEventListener('change', async (evt) => {
     // C) calling FastAPI
     const resp = await fetch(`/api/simulate/${encodeURIComponent(roomName)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const { predicted_temp, solar_inflow, room_volume, windows } = await resp.json();
+    const { predicted_temp } = await resp.json();
     // D) Show predicted temperature
     predictedEl.textContent = predicted_temp.toFixed(1);
     console.log('Predicted temp from server:', predicted_temp);
-    // E) Show other room data
-    document.getElementById('solarInflow').textContent  = solar_inflow.toFixed(1);
-    document.getElementById('roomVolume').textContent   = room_volume.toFixed(0);
-    // F) Render windows list
-    const ul = document.getElementById('windowsUl');
-    ul.innerHTML = '';
-    windows.forEach(w => {
-      const li = document.createElement('li');
-      // translate azimuth degrees into N, NE, E, etc.
-      const compass = azimuthToCompass(w.azimuth);
-      li.textContent = 
-        `Area: ${w.area.toFixed(1)} m², SHGC: ${w.shgc.toFixed(2)}, ` +
-        `Tilt: ${w.tilt.toFixed(1)}°, Facing: ${compass}, Azimuth: ${w.azimuth.toFixed(1)}°`;
-      ul.appendChild(li);
-    });
-
   } catch (err) {
     console.error('Error fetching prediction:', err);
     predictedEl.textContent = 'Error';
   } finally {
+    // E) always hide the spinner at the end
     spinner.style.display = 'none';
   }
 });
-
-function azimuthToCompass(az) {
-  if      (az >= 337.5 || az <  22.5) return 'N';
-  else if (az <   67.5)               return 'NE';
-  else if (az <  112.5)               return 'E';
-  else if (az <  157.5)               return 'SE';
-  else if (az <  202.5)               return 'S';
-  else if (az <  247.5)               return 'SW';
-  else if (az <  292.5)               return 'W';
-  else                                return 'NW';
-}

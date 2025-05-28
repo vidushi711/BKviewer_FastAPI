@@ -4,6 +4,7 @@ import pvlib
 import pandas as pd
 from typing import Any
 from ifc_parsers import Site, Window
+from typing import Tuple, List, Dict
 
 # def window_solar_inflow(window: Window, site: Site, timestamp: pd.Timestamp) -> float:
 #     """
@@ -34,10 +35,12 @@ from ifc_parsers import Site, Window
 
 
 
-def window_solar_inflow(window: Window, site: Site, timestamp: pd.Timestamp) -> float:
+def window_solar_inflow(window: Window, site: Site, timestamp: pd.Timestamp) -> Tuple[float, float, float, float, float]:
     """
     Calculate the solar inflow through a single window over a fixed 5-minute interval,
     using the site’s location metadata and the window’s area and SHGC.
+    Returns: area, shgc, tilt, azimuth, inflow 
+    inflow, window.area, window.SHGC
     """
     # get “now” in the site’s timezone
     # solar_in_time = pd.Timestamp.now(tz=site.timezone)
@@ -73,9 +76,13 @@ def window_solar_inflow(window: Window, site: Site, timestamp: pd.Timestamp) -> 
     dhi = clearsky["dhi"].iloc[0]
 
     # Get window tilt and azimuth (assuming vertical south-facing for simplicity)
-    tilt = 90  # degrees
-    azimuth = 180  # facing south
-
+    tilt = window.tilt # degrees
+    azimuth = window.azimuth
+    if tilt is None:
+        tilt = 90.0
+    if azimuth is None:
+        error_msg = f"Window {window.global_id} has no azimuth set, cannot calculate solar inflow."
+        raise ValueError(error_msg)
     # Calculate plane-of-array (POA) irradiance
     poa_irradiance = pvlib.irradiance.get_total_irradiance(
         surface_tilt=tilt,
@@ -86,11 +93,17 @@ def window_solar_inflow(window: Window, site: Site, timestamp: pd.Timestamp) -> 
         solar_zenith=solpos["apparent_zenith"].iloc[0],
         solar_azimuth=solpos["azimuth"].iloc[0]
     )
-
-    I_poa = poa_irradiance["poa_global"]  # more accurate solar inflow (W/m²)
-
+    # extract the single irradiance value as a float
+    I_poa = float(poa_irradiance["poa_global"])
+    # I_poa = float(poa_irradiance["poa_global"]) #can use this if only one timestamp is passed
     # 5-minute duration
     duration_seconds = 5 * 60  
-
+    inflow = window.area * window.SHGC * I_poa * duration_seconds
     # J = W/m² * m² * SHGC * s
-    return window.area * window.SHGC * I_poa * duration_seconds
+    area = window.area if window.area else 0.0
+    shgc = window.SHGC if window.SHGC else 0.0
+    tilt = window.tilt if window.tilt else tilt
+    azimuth = window.azimuth if window.azimuth else azimuth
+    
+#  area, shgc, tilt, azimuth, inflow
+    return area, shgc, tilt, azimuth, inflow
