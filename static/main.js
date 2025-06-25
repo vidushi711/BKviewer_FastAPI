@@ -172,3 +172,51 @@ function azimuthToCompass(az) {
   else if (az <  292.5)               return 'W';
   else                                return 'NW';
 }
+document.addEventListener("DOMContentLoaded", () => {
+    const container = document.getElementById("temperature-display");
+    const rooms = [
+        {
+            name: "BG.West.010",
+            url: "https://multicare.bk.tudelft.nl/FROST-Server/v1.0/Datastreams(1)/Observations?$orderby=phenomenonTime desc&$top=1"
+        },
+        {
+            name: "BG.West.270",
+            url: "https://multicare.bk.tudelft.nl/FROST-Server/v1.0/Datastreams(7)/Observations?$orderby=phenomenonTime desc&$top=1"
+        },
+        {
+            name: "01.West.120",
+            url: "https://multicare.bk.tudelft.nl/FROST-Server/v1.0/Datastreams(13)/Observations?$orderby=phenomenonTime desc&$top=1"
+        }
+    ];
+
+    rooms.forEach(room => {
+        fetch(room.url)
+            .then(res => res.json())
+            .then(data => {
+                if (data.value && data.value.length > 0 && 'result' in data.value[0]) {
+                  const obs = data.value[0];
+                  const temp = obs.result;
+                  const time = new Date(obs.phenomenonTime);
+                  const timeString = time.toLocaleString([], {
+                    day: '2-digit',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  });
+
+                  const div = document.createElement("div");
+                  div.className = "room-temp";
+                  div.innerText = `${room.name}: ${temp.toFixed(1)}°C (at ${timeString})`;
+                  container.appendChild(div);
+              } else {
+                  const div = document.createElement("div");
+                  div.className = "room-temp";
+                  div.innerText = `${room.name}: data unavailable`;
+                  container.appendChild(div);
+              }
+            })
+            .catch(err => {
+                console.error(`Error loading data for ${room.name}:`, err);
+            });
+    });
+});

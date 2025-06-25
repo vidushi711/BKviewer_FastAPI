@@ -31,6 +31,20 @@ html, body, #cesiumContainer {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+#temperature-display {
+  position: absolute;
+  top: 380px; /* Push below #infoPanel (which is 10px + padding + content height) */
+  left: 10px;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  width: 650px;
+  padding: 15px 20px;
+  border-radius: 6px;
+  color: #fff;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  font-size: 16px;
+  min-width: 250px;
+}
 
 #infoPanel {
   position: absolute;
@@ -49,7 +63,7 @@ html, body, #cesiumContainer {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 
   font-family: "Segoe UI", Tahoma, sans-serif;
-  font-size: 18px;   /* pick whatever base size you like */
+  font-size: 18px;  
   color: #fbf6f6;
 }
 /* force form controls to inherit that */
