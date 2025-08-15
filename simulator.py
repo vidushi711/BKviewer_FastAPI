@@ -20,16 +20,25 @@ from ifc_calculators import window_solar_inflow
 
 IFC_PATH = os.path.join("static", "IFC", "BK_v2_vb_updated.ifc")
 
-def get_current_external_temp(site: Site, timestamp: pd.Timestamp) -> Optional[float]:
-    loc = Point(site.latitude, site.longitude, site.elevation)
-    rounded_time = timestamp.floor('h')
-    if rounded_time.tzinfo:
-        rounded_time = rounded_time.tz_convert('UTC').tz_localize(None)
-    df_weather = Hourly(loc, rounded_time, rounded_time).fetch()
-    if not df_weather.empty:
-        return float(df_weather['temp'].iloc[0])
-    print(f"[WARNING] No external temperature data found for {rounded_time}")
-    return None
+# def get_current_external_temp(site: Site, timestamp: pd.Timestamp) -> Optional[float]:
+#     loc = Point(site.latitude, site.longitude, site.elevation)
+#     rounded_time = timestamp.floor('h')
+#     if rounded_time.tzinfo:
+#         rounded_time = rounded_time.tz_convert('UTC').tz_localize(None)
+#     df_weather = Hourly(loc, rounded_time, rounded_time).fetch()
+#     if not df_weather.empty:
+#         return float(df_weather['temp'].iloc[0])
+#     print(f"[WARNING] No external temperature data found for {rounded_time}")
+#     return None
+def get_current_external_temp(site: "Site", timestamp: pd.Timestamp) -> Optional[float]:
+    """
+    Fetch external temperature from The Green Village Kafka feed only.
+    No fallback to Meteostat for consistency in research data.
+    """
+    val = _tgv_fetch_external_temp_kafka(timestamp)
+    if val is None:
+        raise ValueError(f"No external temperature data from Green Village for {timestamp}")
+    return val
 
 def get_latest_model(path: str = "xgboost_models") -> Optional[Any]:
     models = sorted(Path(path).glob("xgb_pipeline_*.joblib"), reverse=True)

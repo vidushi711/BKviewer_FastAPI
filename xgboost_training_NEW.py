@@ -61,7 +61,7 @@ def fetch_all_sensor_data(base_url: str, page_size: int = 500) -> pd.DataFrame:
     else:
         return pd.DataFrame(columns=['timestamp','internal_temp'])
 
-
+# fetching external temperature for site location at a specific time (hourly average)
 def fetch_external_temp(site: Site, timestamp: pd.Timestamp) -> Optional[float]:
     loc = Point(site.latitude, site.longitude, site.elevation)
     rounded_time = timestamp.floor('h')  # use 'h' to avoid deprecation
@@ -80,7 +80,7 @@ def calculate_total_solar_inflow(site: Site, room: Room, timestamp: pd.Timestamp
         print(f"[INFO] No windows found for room '{room.long_name}' at {timestamp}")
         return total_inflow
     for window in room.windows:
-        inflow = window_solar_inflow(window, site, timestamp)
+        inflow = window_solar_inflow(window, site, timestamp) # // to be corrected
         total_inflow += inflow
     print(f"[INFO] Total solar inflow at {timestamp}: {total_inflow:.2f} J")
     return total_inflow
