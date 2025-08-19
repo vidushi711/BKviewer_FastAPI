@@ -19,7 +19,7 @@ from datetime import datetime
 
 def fetch_sensor_data(url: str, limit: int = 100) -> pd.DataFrame:
     """
-    Fetch sensor observations from the given URL, optionally limiting the number of records.
+    Fetch sensor observations from passed URL (separate for each), optionally limiting the number of records
     Returns an empty DataFrame with the expected columns if no data.
     """
     response = requests.get(url)

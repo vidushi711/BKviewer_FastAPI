@@ -1,6 +1,7 @@
 # This sript is a standalone test script (not part of the final application)
 # for training an XGBoost model using a CSV file with preprocessed data
-# goal is to test the change in prediction accuracy by using 1. different hyperparameters 2. additional input parameters and 3. additional training data
+# goal is to test the change in prediction accuracy by using 
+# 1. different hyperparameters 2. additional input parameters and 3. additional training data
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
@@ -12,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from datetime import datetime
 
-# === 📥 Step 1: Load CSV ===
+# === Step 1: Load CSV ===
 csv_path = Path("output/combined_training_data_20250707.csv")  # <-- Update date as needed
 df = pd.read_csv(csv_path)
 
