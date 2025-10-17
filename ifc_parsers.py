@@ -56,6 +56,55 @@ class Site:
             key = room.short_name
         self.rooms[key] = room
 
+# --- NEW: placement/orientation helpers ---
+
+def axis2placement3d_to_matrix(ax) -> np.ndarray:
+    """IfcAxis2Placement3D → 4x4 matrix [X Y Z O]."""
+    p = ax.Location.Coordinates if getattr(ax, "Location", None) else (0.0, 0.0, 0.0)
+    px, py, pz = map(float, p)
+
+    # Z axis (Axis)
+    if getattr(ax, "Axis", None) and getattr(ax.Axis, "DirectionRatios", None):
+        zx, zy, zz = (ax.Axis.DirectionRatios + (0.0, 0.0))[:3]
+    else:
+        zx, zy, zz = 0.0, 0.0, 1.0
+
+    # X axis (RefDirection)
+    if getattr(ax, "RefDirection", None) and getattr(ax.RefDirection, "DirectionRatios", None):
+        xx, xy, xz = (ax.RefDirection.DirectionRatios + (0.0, 0.0))[:3]
+    else:
+        xx, xy, xz = 1.0, 0.0, 0.0
+
+    Z = np.array([zx, zy, zz], float); Z /= (np.linalg.norm(Z) or 1.0)
+    X = np.array([xx, xy, xz], float); X = X - Z * np.dot(X, Z); X /= (np.linalg.norm(X) or 1.0)
+    Y = np.cross(Z, X)
+
+    M = np.eye(4)
+    M[0:3, 0] = X
+    M[0:3, 1] = Y
+    M[0:3, 2] = Z
+    M[0:3, 3] = [px, py, pz]
+    return M
+
+def placement_chain_matrix(lp) -> np.ndarray:
+    """IfcLocalPlacement chain → world 4x4 matrix."""
+    M = np.eye(4); cur = lp
+    while cur is not None:
+        ax = getattr(cur, "RelativePlacement", None)
+        if ax and ax.is_a("IfcAxis2Placement3D"):
+            M = axis2placement3d_to_matrix(ax) @ M
+        cur = getattr(cur, "PlacementRelTo", None)
+    return M
+
+def true_north_deg(model) -> float:
+    """0°=North, 90°=East. Raises if missing (you asked to enforce TN)."""
+    for ctx in model.by_type("IfcGeometricRepresentationContext"):
+        tn = getattr(ctx, "TrueNorth", None)
+        if tn and hasattr(tn, "DirectionRatios"):
+            x, y = (tn.DirectionRatios + (0, 0))[:2]
+            return (math.degrees(math.atan2(float(x), float(y))) % 360.0)
+    raise ValueError("TrueNorth missing in IfcGeometricRepresentationContext")
+
 
 def compute_average_normal(verts, faces):
     """
@@ -83,60 +132,85 @@ def normal_to_tilt_azimuth(n):
     az = raw if raw >= 0 else raw + 360.0
     return tilt, az
 
-def compute_window_tilt_azimuth(window_entity, window_bbox: BoundingBox) -> tuple[float, float]:
+# def compute_window_tilt_azimuth(window_entity, window_bbox: BoundingBox, yaw_deg: float) -> tuple[float, float]:
+#     """
+#     Builds a mesh for the window_entity, computes its average *exterior* normal,
+#     rotates it by 'yaw_deg' (project → True North), then returns (tilt, azimuth_deg_from_true_north).
+#     """
+#     # 1) Build the mesh
+#     settings = ifcopenshell.geom.settings()
+#     settings.set(settings.USE_WORLD_COORDS, True)
+#     shape = ifcopenshell.geom.create_shape(settings, window_entity)
+#     verts = shape.geometry.verts
+#     raw = shape.geometry.faces
+
+#     # 2) Unpack faces, compute per-face normals & centroids
+#     normals = []
+#     centroids = []
+#     i = 0
+#     while i < len(raw):
+#         count = raw[i]
+#         if count == 3:
+#             i0, i1, i2 = raw[i+1], raw[i+2], raw[i+3]
+#             v0 = np.array(verts[3*i0:3*i0+3])
+#             v1 = np.array(verts[3*i1:3*i1+3])
+#             v2 = np.array(verts[3*i2:3*i2+3])
+#             n = np.cross(v1 - v0, v2 - v0)          # unnormalized normal
+#             centroid = (v0 + v1 + v2) / 3           # triangle centroid
+#             normals.append(n)
+#             centroids.append(centroid)
+#             i += 4
+#         else:
+#             i += 1 + count
+
+#     # 3) Window center from bbox
+#     center = np.array([
+#         (window_bbox.x_min + window_bbox.x_max) / 2,
+#         (window_bbox.y_min + window_bbox.y_max) / 2,
+#         (window_bbox.z_min + window_bbox.z_max) / 2,
+#     ])
+
+#     # 4) Average only exterior-facing normals
+#     total = np.zeros(3)
+#     for n, centroid in zip(normals, centroids):
+#         if np.dot(n, centroid - center) > 0:
+#             total += n
+
+#     # 5) Normalize
+#     norm = np.linalg.norm(total)
+#     outward = (total / norm) if norm > 0 else np.array([0.0, 0.0, 1.0])
+
+#     # 6) Rotate outward vector by georef yaw so azimuth is vs True North
+#     rx, ry = rotate_xy_vec(float(outward[0]), float(outward[1]), yaw_deg)
+#     rz = float(outward[2])
+
+#     # 7) Tilt and azimuth (0°=North, 90°=East)
+#     tilt = math.degrees(math.acos(max(-1.0, min(1.0, rz))))
+#     raw_az = math.degrees(math.atan2(rx, ry))
+#     az = raw_az if raw_az >= 0 else raw_az + 360.0
+#     return tilt, az
+def window_tilt_az_from_placement(win, tn_deg: float) -> tuple[float, float]:
     """
-    Builds a mesh for the window_entity, computes its average *exterior* normal,
-    and returns (tilt, azimuth) in degrees.
+    Return (tilt_deg, azimuth_deg_trueN) for a window using its LocalPlacement.
+    - Tilt: 0°=up, 90°=vertical.
+    - Azimuth: clockwise from True North (0°=N, 90°=E).
     """
-    # 1) Build the mesh
-    settings = ifcopenshell.geom.settings()
-    settings.set(settings.USE_WORLD_COORDS, True)
-    shape = ifcopenshell.geom.create_shape(settings, window_entity)
-    verts = shape.geometry.verts
-    raw = shape.geometry.faces
+    lp = getattr(win, "ObjectPlacement", None)
+    if not lp or not lp.is_a("IfcLocalPlacement"):
+        # fallback
+        return 90.0, 0.0
 
-    # 2) Unpack faces, compute per-face normals & centroids
-    normals = []
-    centroids = []
-    i = 0
-    while i < len(raw):
-        count = raw[i]
-        if count == 3:
-            i0, i1, i2 = raw[i+1], raw[i+2], raw[i+3]
-            v0 = np.array(verts[3*i0:3*i0+3])
-            v1 = np.array(verts[3*i1:3*i1+3])
-            v2 = np.array(verts[3*i2:3*i2+3])
-            # unnormalized normal
-            n = np.cross(v1 - v0, v2 - v0)
-            # triangle centroid
-            centroid = (v0 + v1 + v2) / 3
-            normals.append(n)
-            centroids.append(centroid)
-            i += 4
-        else:
-            i += 1 + count
+    M = placement_chain_matrix(lp)
+    Y = M[0:3, 1].astype(float)
+    Y /= (np.linalg.norm(Y) or 1.0)
 
-    # 3) Compute window center from bounding box
-    center = np.array([
-        (window_bbox.x_min + window_bbox.x_max) / 2,
-        (window_bbox.y_min + window_bbox.y_max) / 2,
-        (window_bbox.z_min + window_bbox.z_max) / 2,
-    ])
+    # project-space tilt/azimuth
+    tilt = math.degrees(math.acos(max(-1.0, min(1.0, Y[2]))))
+    az_proj = math.degrees(math.atan2(Y[0], Y[1])) % 360.0  # 0°=+Y
 
-    # 4) Average only *exterior*-facing normals
-    total = np.zeros(3)
-    for n, centroid in zip(normals, centroids):
-        # if dot(n, (centroid - center)) > 0, normal points outside
-        if np.dot(n, centroid - center) > 0:
-            total += n
-
-    # 5) Normalize & compute tilt/azimuth
-    norm = np.linalg.norm(total)
-    outward = (total / norm) if norm > 0 else np.array([0, 0, 1])
-    tilt = math.degrees(math.acos(outward[2]))
-    raw_az = math.degrees(math.atan2(outward[0], outward[1]))
-    az = raw_az if raw_az >= 0 else raw_az + 360.0
-    return tilt, az
+    # correct by True North ONLY
+    az_true = (az_proj - tn_deg) % 360.0
+    return tilt, az_true
 
 # mini FUNCTION TO COMPUTE BOUNDING BOX
 def compute_bounding_box(shape_obj) -> Optional[BoundingBox]:
@@ -169,13 +243,48 @@ def extract_site_details(ifc_path: Union[str, Path]) -> Site:
     elev = float(getattr(ifc_site, "RefElevation", 0.0) or 0.0)
     return Site(latitude=lat, longitude=lon, elevation=elev)
 
+# GEOREFERENCING DETAILS FROM IFC FILE + OTHER UTILITIES
+def get_georef_info(model) -> dict:
+    """
+    Returns {'yaw_deg': float, 'offset': (Ex, Ny, Hz)} from IfcMapConversion if present.
+    yaw_deg is the counter-clockwise rotation to go from IFC project axes (+Y) to True North.
+    """
+    conversions = model.by_type("IfcMapConversion")
+    if conversions:
+        mc = conversions[0]
+        # azimuth of map X axis expressed in IFC project XY
+        yaw_deg = (math.degrees(math.atan2(mc.XAxisAbscissa, mc.XAxisOrdinate)) % 360.0)
+        return {
+            "yaw_deg": yaw_deg,
+            "offset": (float(mc.Eastings or 0.0),
+                       float(mc.Northings or 0.0),
+                       float(mc.OrthogonalHeight or 0.0))
+        }
+    # no MapConversion (IFC2x3 or un-georef’d file)
+    return {"yaw_deg": 0.0, "offset": (0.0, 0.0, 0.0)}
+
+def rotate_xy_vec(vx: float, vy: float, yaw_deg: float) -> tuple[float, float]:
+    th = math.radians(yaw_deg)
+    c, s = math.cos(th), math.sin(th)
+    return (c*vx - s*vy, s*vx + c*vy)
+
 # FUNCTION TO create ROOM OBJECT FROM  IFC FILE
 def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
     '''This function builds and returns a Site object containing exactly one room in its .rooms dict'''
     if isinstance(ifc_path, str):
         ifc_path = Path(ifc_path)
+    
+    # model = ifcopenshell.open(ifc_path)
+    # site = extract_site_details(ifc_path)
+    # # NEW: read georeferencing once
+    # georef = get_georef_info(model)
+    # yaw_deg = georef["yaw_deg"]
+    # ----------rewritten part ----------
     model = ifcopenshell.open(ifc_path)
     site = extract_site_details(ifc_path)
+    # Enforce True North (raises if missing)
+    tn_deg = true_north_deg(model)
+
     spaces = model.by_type("IfcSpace")
     windows = model.by_type("IfcWindow")
     settings = ifcopenshell.geom.settings()
@@ -226,7 +335,8 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
                         area = bq.get("Area", 0)
                         shgc = get_psets(w).get("Analytical Properties(Type)", {}).get("Solar Heat Gain Coefficient", 0)
 
-                        tilt_val, az_val = compute_window_tilt_azimuth(w, wbbox)
+                        # tilt_val, az_val = compute_window_tilt_azimuth(w, wbbox, ya)
+                        tilt_val, az_val = window_tilt_az_from_placement(w, tn_deg)
                         room_windows.append(
                             Window(
                                 global_id=w.GlobalId,

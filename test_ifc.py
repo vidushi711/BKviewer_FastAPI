@@ -231,7 +231,7 @@ def check_ifc_orientation(ifc_path: str | Path):
 
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
-    default = Path("static/IFC/BK_v2_vb_updated.ifc")
+    default = Path("static/IFC/BK_v6_ifc4_georef_transformed.ifc")
     path_arg = Path(sys.argv[1]) if len(sys.argv) > 1 else default
     check_ifc_georef(path_arg)
     check_ifc_orientation(path_arg)
