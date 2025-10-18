@@ -1,6 +1,6 @@
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Union, Tuple, List, Dict
+from typing import Optional, Union
 # external
 import math
 import numpy as np
@@ -104,33 +104,6 @@ def true_north_deg(model) -> float:
             x, y = (tn.DirectionRatios + (0, 0))[:2]
             return (math.degrees(math.atan2(float(x), float(y))) % 360.0)
     raise ValueError("TrueNorth missing in IfcGeometricRepresentationContext")
-
-
-def compute_average_normal(verts, faces):
-    """
-    verts: flat list [x0,y0,z0, x1,y1,z1, ...]
-    faces: list of 3-int tuples (i0, i1, i2) indexing into verts//3
-    """
-    total = np.zeros(3)
-    for (i0, i1, i2) in faces:
-        v0 = np.array(verts[3*i0:3*i0+3])
-        v1 = np.array(verts[3*i1:3*i1+3])
-        v2 = np.array(verts[3*i2:3*i2+3])
-        # triangle normal (unnormalized)
-        n = np.cross(v1 - v0, v2 - v0)
-        total += n  # weighted by n (area proportional)
-    norm = np.linalg.norm(total)
-    return (total / norm) if norm > 0 else np.array([0, 0, 1])
-
-def normal_to_tilt_azimuth(n):
-    """
-    n: unit normal [nx, ny, nz]
-    returns tilt (° from horizontal), azimuth (° clockwise from north)
-    """
-    tilt = math.degrees(math.acos(n[2]))
-    raw = math.degrees(math.atan2(n[0], n[1]))
-    az = raw if raw >= 0 else raw + 360.0
-    return tilt, az
 
 # def compute_window_tilt_azimuth(window_entity, window_bbox: BoundingBox, yaw_deg: float) -> tuple[float, float]:
 #     """
@@ -243,31 +216,6 @@ def extract_site_details(ifc_path: Union[str, Path]) -> Site:
     elev = float(getattr(ifc_site, "RefElevation", 0.0) or 0.0)
     return Site(latitude=lat, longitude=lon, elevation=elev)
 
-# GEOREFERENCING DETAILS FROM IFC FILE + OTHER UTILITIES
-def get_georef_info(model) -> dict:
-    """
-    Returns {'yaw_deg': float, 'offset': (Ex, Ny, Hz)} from IfcMapConversion if present.
-    yaw_deg is the counter-clockwise rotation to go from IFC project axes (+Y) to True North.
-    """
-    conversions = model.by_type("IfcMapConversion")
-    if conversions:
-        mc = conversions[0]
-        # azimuth of map X axis expressed in IFC project XY
-        yaw_deg = (math.degrees(math.atan2(mc.XAxisAbscissa, mc.XAxisOrdinate)) % 360.0)
-        return {
-            "yaw_deg": yaw_deg,
-            "offset": (float(mc.Eastings or 0.0),
-                       float(mc.Northings or 0.0),
-                       float(mc.OrthogonalHeight or 0.0))
-        }
-    # no MapConversion (IFC2x3 or un-georef’d file)
-    return {"yaw_deg": 0.0, "offset": (0.0, 0.0, 0.0)}
-
-def rotate_xy_vec(vx: float, vy: float, yaw_deg: float) -> tuple[float, float]:
-    th = math.radians(yaw_deg)
-    c, s = math.cos(th), math.sin(th)
-    return (c*vx - s*vy, s*vx + c*vy)
-
 # FUNCTION TO create ROOM OBJECT FROM  IFC FILE
 def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
     '''This function builds and returns a Site object containing exactly one room in its .rooms dict'''
@@ -366,7 +314,7 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
     raise ValueError(f"No space named '{room_name}' found in IFC")
 
 if __name__ == "__main__":
-    ifc_path = 'static/IFC/BK_v2_vb_updated.ifc'
+    ifc_path = 'static/IFC/BK_v6_ifc4_georef_transformed.ifc'
     room_name = 'BG.West.010'
     site = parse_room(ifc_path, room_name)
     room = site.rooms.get(room_name)

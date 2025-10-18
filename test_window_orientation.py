@@ -1,4 +1,4 @@
-# BIM2GIS/test_window_orientation_room.py
+#test_window_orientation_room.py
 from __future__ import annotations
 from pathlib import Path
 import math, json
