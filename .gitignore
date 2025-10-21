@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 *.ifc
 *.geojson
+.env/
+.env/*
