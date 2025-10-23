@@ -9,6 +9,7 @@ dependencies = [
     "ifcopenshell>=0.8.2",
     "ipykernel>=6.29.5",
     "joblib>=1.5.0",
+    "jupyter>=1.1.1",
     "matplotlib>=3.10.3",
     "meteostat>=1.6.8",
     "netcdf4>=1.7.2",
