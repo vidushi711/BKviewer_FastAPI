@@ -37,6 +37,7 @@ class Room:
     short_name: str
     long_name: str
     volume: float = 0
+    area:float = 0
     bounding_box: Optional[BoundingBox] = None
     windows: Optional[list[Window]] = None
 
@@ -97,7 +98,7 @@ def placement_chain_matrix(lp) -> np.ndarray:
     return M
 
 def true_north_deg(model) -> float:
-    """0°=North, 90°=East. Raises if missing (you asked to enforce TN)."""
+    """0°=North, 90°=East. Raises if missing (TN enforced)."""
     for ctx in model.by_type("IfcGeometricRepresentationContext"):
         tn = getattr(ctx, "TrueNorth", None)
         if tn and hasattr(tn, "DirectionRatios"):
@@ -105,63 +106,7 @@ def true_north_deg(model) -> float:
             return (math.degrees(math.atan2(float(x), float(y))) % 360.0)
     raise ValueError("TrueNorth missing in IfcGeometricRepresentationContext")
 
-# def compute_window_tilt_azimuth(window_entity, window_bbox: BoundingBox, yaw_deg: float) -> tuple[float, float]:
-#     """
-#     Builds a mesh for the window_entity, computes its average *exterior* normal,
-#     rotates it by 'yaw_deg' (project → True North), then returns (tilt, azimuth_deg_from_true_north).
-#     """
-#     # 1) Build the mesh
-#     settings = ifcopenshell.geom.settings()
-#     settings.set(settings.USE_WORLD_COORDS, True)
-#     shape = ifcopenshell.geom.create_shape(settings, window_entity)
-#     verts = shape.geometry.verts
-#     raw = shape.geometry.faces
 
-#     # 2) Unpack faces, compute per-face normals & centroids
-#     normals = []
-#     centroids = []
-#     i = 0
-#     while i < len(raw):
-#         count = raw[i]
-#         if count == 3:
-#             i0, i1, i2 = raw[i+1], raw[i+2], raw[i+3]
-#             v0 = np.array(verts[3*i0:3*i0+3])
-#             v1 = np.array(verts[3*i1:3*i1+3])
-#             v2 = np.array(verts[3*i2:3*i2+3])
-#             n = np.cross(v1 - v0, v2 - v0)          # unnormalized normal
-#             centroid = (v0 + v1 + v2) / 3           # triangle centroid
-#             normals.append(n)
-#             centroids.append(centroid)
-#             i += 4
-#         else:
-#             i += 1 + count
-
-#     # 3) Window center from bbox
-#     center = np.array([
-#         (window_bbox.x_min + window_bbox.x_max) / 2,
-#         (window_bbox.y_min + window_bbox.y_max) / 2,
-#         (window_bbox.z_min + window_bbox.z_max) / 2,
-#     ])
-
-#     # 4) Average only exterior-facing normals
-#     total = np.zeros(3)
-#     for n, centroid in zip(normals, centroids):
-#         if np.dot(n, centroid - center) > 0:
-#             total += n
-
-#     # 5) Normalize
-#     norm = np.linalg.norm(total)
-#     outward = (total / norm) if norm > 0 else np.array([0.0, 0.0, 1.0])
-
-#     # 6) Rotate outward vector by georef yaw so azimuth is vs True North
-#     rx, ry = rotate_xy_vec(float(outward[0]), float(outward[1]), yaw_deg)
-#     rz = float(outward[2])
-
-#     # 7) Tilt and azimuth (0°=North, 90°=East)
-#     tilt = math.degrees(math.acos(max(-1.0, min(1.0, rz))))
-#     raw_az = math.degrees(math.atan2(rx, ry))
-#     az = raw_az if raw_az >= 0 else raw_az + 360.0
-#     return tilt, az
 def window_tilt_az_from_placement(win, tn_deg: float) -> tuple[float, float]:
     """
     Return (tilt_deg, azimuth_deg_trueN) for a window using its LocalPlacement.
@@ -247,8 +192,14 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
             gid = space.GlobalId
             short_name = space.Name or ""
             long_name = space.LongName or ""
-            props = get_psets(space)
-            volume = props.get("BaseQuantities", {}).get("GrossVolume", 0)
+            props = get_psets(space)     # dict of all psets
+            bq = props.get("BaseQuantities", {})
+            volume = bq.get("GrossVolume") or bq.get("NetVolume") or bq.get("Volume") or 0
+            area   = bq.get("GrossFloorArea") or bq.get("NetFloorArea") or bq.get("Area") or 0
+            # normalize to float
+            volume = float(volume) if volume else 0.0
+            area   = float(area) if area else 0.0
+
             try:
                 shape = ifcopenshell.geom.create_shape(settings, space)
                 bbox = compute_bounding_box(shape)
@@ -304,6 +255,7 @@ def parse_room(ifc_path: Union[str, Path], room_name: str) -> Site:
                 short_name=short_name,
                 long_name=long_name,
                 volume=volume,
+                area=area,
                 bounding_box=bbox,
                 windows=room_windows or None
             )
